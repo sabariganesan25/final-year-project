@@ -1,7 +1,10 @@
+import logging
+import time
 import uuid
 
 from fastapi import HTTPException
 
+from app.exceptions import CheckoutUnavailableError
 from app.services.graph_service import (
     add_to_cart,
     clear_cart,
@@ -12,6 +15,8 @@ from app.services.graph_service import (
     read_cart,
     search_products as graph_search_products,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def get_products():
@@ -34,15 +39,37 @@ def search_products(query: str):
     return graph_search_products(query)
 
 
+def _create_order_with_retry(user_id: str, items: list[dict], retries: int = 3, backoff: float = 0.5):
+    for attempt in range(retries):
+        try:
+            if any(item.get("failure_mode") == "db" for item in items):
+                raise RuntimeError("GraphWriteFailure: order transaction failed while writing checkout state to Neo4j")
+            return create_order(user_id, items)
+        except Exception:
+            if attempt == retries - 1:
+                raise
+            time.sleep(backoff * (2**attempt))
+
+
 def register_checkout(session_id: str, customer: dict):
     cart = read_cart(session_id)
     if not cart["items"]:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
-    if any(item.get("failure_mode") == "db" for item in cart["items"]):
-        raise RuntimeError("GraphWriteFailure: order transaction failed while writing checkout state to Neo4j")
+    try:
+        order_id = _create_order_with_retry(customer.get("user_id", "u1"), cart["items"])
+    except Exception as exc:
+        logger.error(
+            "CheckoutUnavailable",
+            extra={
+                "service": "orders",
+                "customer": customer.get("email", "unknown"),
+                "session_id": session_id,
+                "error": str(exc),
+            },
+        )
+        raise CheckoutUnavailableError() from exc
 
-    order_id = create_order(customer.get("user_id", "u1"), cart["items"])
     payment = process_payment(order_id, cart["totals"]["grand_total"], cart)
     for item in cart["items"]:
         decrement_inventory(item["product_id"])

@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
+from app.exceptions import CheckoutUnavailableError
 from app.models.schemas import CheckoutRequest, StorefrontCartRequest, StorefrontPaymentRequest
 from app.services.storefront_service import (
     add_item_to_cart,
@@ -36,16 +37,25 @@ def get_cart(session_id: str):
 
 @router.post("/checkout")
 def place_order(payload: CheckoutRequest):
-    result = register_checkout(
-        payload.session_id,
-        {
-            "customer_name": payload.customer_name,
-            "email": payload.email,
-            "address": payload.address,
-            "user_id": payload.user_id or "u1",
-        },
-    )
-    return result
+    try:
+        return register_checkout(
+            payload.session_id,
+            {
+                "customer_name": payload.customer_name,
+                "email": payload.email,
+                "address": payload.address,
+                "user_id": payload.user_id or "u1",
+            },
+        )
+    except CheckoutUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": str(exc),
+                "code": exc.code,
+                "retryable": exc.retryable,
+            },
+        ) from exc
 
 
 @router.post("/payment")
