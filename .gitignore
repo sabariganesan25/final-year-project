@@ -1,0 +1,9 @@
+.env
+claude_desktop_config.json
+.venv/
+.uv-cache/
+.dist/
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+*.pyc

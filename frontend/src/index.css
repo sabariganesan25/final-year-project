@@ -1,0 +1,48 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap");
+@import "tailwindcss";
+
+:root {
+  --background: #04070e;
+  --panel: #09111f;
+  --accent: #54d3c2;
+  --accent-strong: #7ce4d7;
+  --ring: rgba(84, 211, 194, 0.2);
+  --danger: #f87171;
+  --success: #6ee7b7;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--background);
+    color: #f8fafc;
+    font-family: "Space Grotesk", "Segoe UI", sans-serif;
+    text-rendering: optimizeLegibility;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  code,
+  pre,
+  .font-mono {
+    font-family: "JetBrains Mono", monospace;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
