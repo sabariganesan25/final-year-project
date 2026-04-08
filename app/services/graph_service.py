@@ -141,6 +141,44 @@ DEFAULT_USERS = [
     {"id": "u2", "username": "bob", "email": "bob@example.com"},
 ]
 
+DEMO_FAILURES = [
+    {
+        "mode": "redis",
+        "label": "Cart Cache Failure",
+        "service": "cart",
+        "description": "Chaos demo for add-to-cart failures",
+        "active": True,
+    },
+    {
+        "mode": "db",
+        "label": "Checkout Graph Write Failure",
+        "service": "orders",
+        "description": "Chaos demo for order persistence failures",
+        "active": True,
+    },
+    {
+        "mode": "payment",
+        "label": "Payment Timeout",
+        "service": "payments",
+        "description": "Chaos demo for payment authorization failures",
+        "active": True,
+    },
+    {
+        "mode": "search-index",
+        "label": "Search Index Failure",
+        "service": "search",
+        "description": "Chaos demo for product discovery failures",
+        "active": True,
+    },
+    {
+        "mode": "inventory-oversell",
+        "label": "Inventory Oversell",
+        "service": "inventory",
+        "description": "Chaos demo for stock reservation failures",
+        "active": True,
+    },
+]
+
 PRODUCT_BY_ID = {product["id"]: product for product in PRODUCTS}
 SERVICE_COMPONENT_MAP = {
     "api-gateway": "storefront-ui",
@@ -176,6 +214,7 @@ def initialize_graph():
         "CREATE CONSTRAINT user_id IF NOT EXISTS FOR (n:User) REQUIRE n.id IS UNIQUE",
         "CREATE CONSTRAINT cart_session IF NOT EXISTS FOR (n:Cart) REQUIRE n.session_id IS UNIQUE",
         "CREATE CONSTRAINT order_id IF NOT EXISTS FOR (n:Order) REQUIRE n.order_id IS UNIQUE",
+        "CREATE CONSTRAINT demo_mode IF NOT EXISTS FOR (n:DemoControl) REQUIRE n.mode IS UNIQUE",
     ]
     for statement in constraints:
         execute_write(statement)
@@ -253,6 +292,17 @@ def initialize_graph():
             u.email = user.email
         """,
         {"users": DEFAULT_USERS},
+    )
+    execute_write(
+        """
+        UNWIND $controls AS control
+        MERGE (d:DemoControl {mode: control.mode})
+        SET d.label = control.label,
+            d.service = control.service,
+            d.description = control.description,
+            d.active = COALESCE(d.active, control.active)
+        """,
+        {"controls": DEMO_FAILURES},
     )
 
 
@@ -354,7 +404,7 @@ def add_to_cart(session_id: str, product_id: str, quantity: int):
     product = get_product(product_id)
     if quantity <= 0:
         raise HTTPException(status_code=400, detail="Quantity must be at least 1")
-    if product.get("failure_mode") == "redis" or quantity > 1000:
+    if (product.get("failure_mode") == "redis" and is_demo_failure_active("redis")) or quantity > 1000:
         raise RuntimeError("RedisCrash: cart cache could not persist the selected item")
 
     execute_write(
@@ -421,3 +471,46 @@ def decrement_inventory(product_id: str):
         {"product_id": product_id},
     )
     return max(product["stock"] - 1, 0)
+
+
+def list_demo_controls():
+    rows = run_cypher(
+        """
+        MATCH (d:DemoControl)
+        RETURN d
+        ORDER BY d.service, d.mode
+        """
+    )
+    return [dict(row["d"]) for row in rows]
+
+
+def is_demo_failure_active(mode: str) -> bool:
+    rows = run_cypher("MATCH (d:DemoControl {mode: $mode}) RETURN d.active AS active", {"mode": mode})
+    if not rows:
+        return True
+    return bool(rows[0].get("active", True))
+
+
+def set_demo_failure_active(mode: str, active: bool):
+    execute_write(
+        """
+        MATCH (d:DemoControl {mode: $mode})
+        SET d.active = $active,
+            d.updated_at = $updated_at
+        """,
+        {"mode": mode, "active": active, "updated_at": to_iso()},
+    )
+    rows = run_cypher("MATCH (d:DemoControl {mode: $mode}) RETURN d", {"mode": mode})
+    return dict(rows[0]["d"]) if rows else None
+
+
+def reset_demo_controls(active: bool = True):
+    execute_write(
+        """
+        MATCH (d:DemoControl)
+        SET d.active = $active,
+            d.updated_at = $updated_at
+        """,
+        {"active": active, "updated_at": to_iso()},
+    )
+    return list_demo_controls()

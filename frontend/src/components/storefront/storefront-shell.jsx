@@ -1,11 +1,11 @@
-import { ShoppingCart, ShieldAlert, Sparkles } from "lucide-react";
+import { RotateCcw, ShoppingCart, ShieldAlert, Sparkles } from "lucide-react";
 import { Link, NavLink } from "react-router-dom";
 
 import { Button } from "../ui/button";
 import { useStore } from "../../storefront/use-store";
 
 export function StorefrontShell({ children }) {
-  const { cart, notice, setNotice } = useStore();
+  const { cart, notice, resetDemo, setNotice } = useStore();
 
   return (
     <div className="min-h-screen bg-[#f5f7fb] text-slate-900">
@@ -34,6 +34,15 @@ export function StorefrontShell({ children }) {
           </nav>
 
           <div className="ml-auto flex items-center gap-3 md:ml-6">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              onClick={resetDemo}
+            >
+              <RotateCcw size={16} />
+              Start Fresh
+            </Button>
             <Button asChild variant="outline" className="border-slate-200 bg-white text-slate-700 hover:bg-slate-50">
               <Link to="/ops">
                 <ShieldAlert size={16} />

@@ -13,6 +13,7 @@ from app.services.incident_service import (
     list_incidents,
     update_incident,
 )
+from app.services.graph_service import list_demo_controls, reset_demo_controls, set_demo_failure_active
 
 router = APIRouter(prefix="/api/platform", tags=["platform"])
 
@@ -21,6 +22,10 @@ class IncidentUpdateRequest(BaseModel):
     status: str | None = None
     assignee: str | None = None
     resolution_summary: str | None = None
+
+
+class DemoControlUpdateRequest(BaseModel):
+    active: bool
 
 
 class DatabaseCrashError(RuntimeError):
@@ -109,6 +114,24 @@ def health():
 @router.get("/graph")
 def graph():
     return get_graph_snapshot()
+
+
+@router.get("/demo-controls")
+def demo_controls():
+    return {"status": "success", "controls": list_demo_controls()}
+
+
+@router.patch("/demo-controls/{mode}")
+def update_demo_control(mode: str, payload: DemoControlUpdateRequest):
+    control = set_demo_failure_active(mode, payload.active)
+    if not control:
+        raise HTTPException(status_code=404, detail="Demo control not found")
+    return {"status": "success", "control": control}
+
+
+@router.post("/demo-controls/reset")
+def reset_demo_control_state():
+    return {"status": "success", "controls": reset_demo_controls(True)}
 
 
 @router.post("/simulate/{scenario}")

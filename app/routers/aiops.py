@@ -94,8 +94,13 @@ async def run_fix(incident_id: str, payload: FixRequest):
                 "summary": parsed.get("explanation", "AI-generated patch suggestion ready for review."),
                 "explanation": parsed.get("explanation", ""),
                 "diff": parsed.get("diff_preview") or parsed.get("suggested_code") or tool_response.get("fix", ""),
+                "original_code": parsed.get("original_code", ""),
+                "suggested_code": parsed.get("suggested_code", ""),
                 "changes": parsed.get("changes", []),
             }
+
+    if not structured and tool_response.get("fallback"):
+        structured = tool_response["fallback"]
 
     if not structured:
         structured = build_fallback_fix(incident, file_path=file_path)

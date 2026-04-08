@@ -11,6 +11,7 @@ from app.services.graph_service import (
     create_order,
     decrement_inventory,
     get_product,
+    is_demo_failure_active,
     list_products as graph_products,
     read_cart,
     search_products as graph_search_products,
@@ -34,7 +35,7 @@ def add_item_to_cart(session_id: str | None, product_id: str, quantity: int):
 
 
 def search_products(query: str):
-    if query == "broken_ranking":
+    if query == "broken_ranking" and is_demo_failure_active("search-index"):
         raise RuntimeError("SearchIndexMismatch: graph query referenced an invalid product field")
     return graph_search_products(query)
 
@@ -42,7 +43,7 @@ def search_products(query: str):
 def _create_order_with_retry(user_id: str, items: list[dict], retries: int = 3, backoff: float = 0.5):
     for attempt in range(retries):
         try:
-            if any(item.get("failure_mode") == "db" for item in items):
+            if any(item.get("failure_mode") == "db" for item in items) and is_demo_failure_active("db"):
                 raise RuntimeError("GraphWriteFailure: order transaction failed while writing checkout state to Neo4j")
             return create_order(user_id, items)
         except Exception:
@@ -78,7 +79,7 @@ def register_checkout(session_id: str, customer: dict):
 
 
 def process_payment(order_id: str, amount: float, cart: dict):
-    if any(item.get("failure_mode") == "payment" for item in cart["items"]):
+    if any(item.get("failure_mode") == "payment" for item in cart["items"]) and is_demo_failure_active("payment"):
         raise RuntimeError("PaymentTimeout: external payment gateway timed out during authorization")
     return {"status": "success", "transaction_id": f"txn-{order_id}", "amount": amount}
 

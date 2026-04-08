@@ -10,6 +10,8 @@ from app.services.incident_service import initialize_storage
 
 app = FastAPI(title="E-Commerce API", version="2.0.0")
 
+app.add_middleware(ErrorLoggerMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -76,8 +78,6 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         manager.disconnect(websocket)
 
-
-app.add_middleware(ErrorLoggerMiddleware)
 
 app.include_router(orders.router)
 app.include_router(products.router)

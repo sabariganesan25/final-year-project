@@ -86,7 +86,6 @@ export default function IncidentDetail() {
     [fix.file_path, incident?.fix_file_path, rca.related_file],
   );
   const [fileOverride, setFileOverride] = useState(filePath);
-
   useEffect(() => {
     setFileOverride(filePath);
   }, [filePath]);

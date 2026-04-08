@@ -12,7 +12,12 @@ async function request(path, options = {}) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(payload.detail || payload.message || payload.error || "Request failed");
+    const detail = payload.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : detail?.message || payload.message || payload.error || "Request failed";
+    const error = new Error(message);
     error.payload = payload;
     throw error;
   }
@@ -61,6 +66,16 @@ export const api = {
   getHealth: () => request("/api/platform/health"),
   getGraph: () => request("/api/platform/graph"),
   getLogs: () => request("/api/platform/logs/recent"),
+  getDemoControls: () => request("/api/platform/demo-controls"),
+  updateDemoControl: (mode, active) =>
+    request(`/api/platform/demo-controls/${mode}`, {
+      method: "PATCH",
+      body: JSON.stringify({ active }),
+    }),
+  resetDemoControls: () =>
+    request("/api/platform/demo-controls/reset", {
+      method: "POST",
+    }),
   simulate: async (scenario) => {
     const response = await fetch(`${API_BASE}/api/platform/simulate/${scenario}`, { method: "POST" });
     const payload = await response.json().catch(() => ({}));

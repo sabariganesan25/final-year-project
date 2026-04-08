@@ -30,6 +30,15 @@ def _build_fix_artifact(incident_id: str, incident: dict, file_path: str) -> tup
     return f"ai-fixes/incident-{incident_id}.md", content
 
 
+def _resolve_fix_content(incident: dict, file_path: str):
+    fix_payload = incident.get("fix_payload", {})
+    suggested_code = fix_payload.get("suggested_code", "")
+    original_code = fix_payload.get("original_code", "")
+    if suggested_code:
+        return original_code, suggested_code
+    return "", ""
+
+
 async def apply_fix_to_github(incident_id: str, file_path: str, approved: bool, branch_name: str = None) -> dict:
     """
     HUMAN-IN-THE-LOOP: Executes ONLY if approved=True.
@@ -57,6 +66,17 @@ async def apply_fix_to_github(incident_id: str, file_path: str, approved: bool, 
             branch_name = f"fix/incident-{incident_id}-{datetime.datetime.utcnow().strftime('%s')}"
             
         repo.create_git_ref(ref=f"refs/heads/{branch_name}", sha=sb.commit.sha)
+
+        original_code, suggested_code = _resolve_fix_content(incident, file_path)
+        target_file = repo.get_contents(file_path, ref=base_branch)
+        if suggested_code:
+            repo.update_file(
+                file_path,
+                f"fix: apply MCP remediation for incident {incident_id}",
+                suggested_code,
+                target_file.sha,
+                branch=branch_name,
+            )
 
         artifact_path, artifact_content = _build_fix_artifact(incident_id, incident, file_path)
         repo.create_file(

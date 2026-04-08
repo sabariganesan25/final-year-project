@@ -2,6 +2,8 @@ import json
 import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from difflib import unified_diff
+from pathlib import Path
 
 from app.services.graph_service import (
     COMPONENTS,
@@ -528,7 +530,87 @@ def build_fallback_rca(incident):
 def build_fallback_fix(incident, file_path=None):
     file_path = file_path or incident.get("fix_file_path") or default_fix_file(incident["service"])
     component = incident.get("component", infer_component(incident["service"], incident["error_type"], incident.get("error_message", "")))
-    diff = f"""--- a/{file_path}
+    project_root = Path(__file__).resolve().parents[2]
+    absolute_file = project_root / file_path
+    original_code = ""
+    suggested_code = ""
+
+    if absolute_file.exists():
+        original_code = absolute_file.read_text(encoding="utf-8")
+
+    if incident["service"] == "payments" and file_path == "app/services/storefront_service.py" and original_code:
+        start = original_code.find("def process_payment(")
+        end = original_code.find("\ndef get_cart(", start)
+        if start != -1 and end != -1:
+            replacement = """def process_payment(order_id: str, amount: float, cart: dict):
+    if any(item.get("failure_mode") == "payment" for item in cart["items"]) and is_demo_failure_active("payment"):
+        logger.warning(
+            "PaymentAuthorizationDeferred",
+            extra={
+                "service": "payments",
+                "order_id": order_id,
+                "amount": amount,
+                "item_count": len(cart["items"]),
+            },
+        )
+        return {
+            "status": "deferred",
+            "transaction_id": f"txn-pending-{order_id}",
+            "amount": amount,
+            "message": "Payment authorization delayed; order queued for retry.",
+            "retryable": True,
+        }
+    return {"status": "success", "transaction_id": f"txn-{order_id}", "amount": amount}"""
+            suggested_code = original_code[:start] + replacement + "\n\n" + original_code[end + 1 :]
+
+    if not suggested_code and incident["service"] == "orders" and file_path == "app/services/storefront_service.py" and original_code:
+        start = original_code.find("def register_checkout(")
+        end = original_code.find("\ndef process_payment(", start)
+        if start != -1 and end != -1:
+            replacement = """def register_checkout(session_id: str, customer: dict):
+    cart = read_cart(session_id)
+    if not cart["items"]:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+
+    try:
+        order_id = _create_order_with_retry(customer.get("user_id", "u1"), cart["items"])
+    except Exception as exc:
+        logger.error(
+            "CheckoutUnavailable",
+            extra={
+                "service": "orders",
+                "customer": customer.get("email", "unknown"),
+                "session_id": session_id,
+                "error": str(exc),
+            },
+        )
+        return {
+            "status": "deferred",
+            "code": "CHECKOUT_QUEUED",
+            "message": "Checkout write failed, but the order has been queued for retry.",
+            "retryable": True,
+            "customer": customer,
+        }
+
+    payment = process_payment(order_id, cart["totals"]["grand_total"], cart)
+    for item in cart["items"]:
+        decrement_inventory(item["product_id"])
+    clear_cart(session_id)
+    return {"status": "success", "order_id": order_id, "payment": payment, "customer": customer}"""
+            suggested_code = original_code[:start] + replacement + "\n\n" + original_code[end + 1 :]
+
+    if suggested_code:
+        diff = "\n".join(
+            unified_diff(
+                original_code.splitlines(),
+                suggested_code.splitlines(),
+                fromfile=f"a/{file_path}",
+                tofile=f"b/{file_path}",
+                lineterm="",
+            )
+        )
+    else:
+        diff = f"""--- a/{file_path}
 +++ b/{file_path}
 @@
 -# existing failure path
@@ -542,6 +624,8 @@ def build_fallback_fix(incident, file_path=None):
         "summary": f"Suggested remediation prepared for {incident['error_type']} based on the {component} dependency.",
         "explanation": f"Add a protective guard around the {component} dependency and return a clear failure response before the exception propagates.",
         "diff": diff,
+        "original_code": original_code,
+        "suggested_code": suggested_code or original_code,
         "changes": [
             f"Add timeout and fallback handling around {component}.",
             "Log structured failure context before raising an application-level error.",
